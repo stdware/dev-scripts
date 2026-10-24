@@ -4,9 +4,9 @@
 #[[
 vcpkg-workspace.cmake from https://github.com/stdware/dev-scripts
 
-Prepares the vcpkg workspace of a project: vcpkg and the overlays as the sources of the project
-specify them, checked out into the dependency directory, and the dependencies of the manifest of
-the project installed into <vcpkg>/installed.
+The script prepares the vcpkg workspace of a project. It checks out vcpkg and the overlays that
+the sources of the project specify into the dependency directory, and installs the dependencies of
+the manifest of the project into <vcpkg>/installed.
 
 Usage:
     cmake -P <dir>/vcpkg-workspace.cmake <command> [<option>...] [-- <argument>...]
@@ -44,23 +44,24 @@ Project:
 
     "manifest-dir" at the top level of the sources is the directory of vcpkg.json, the directory
     of the last file of sources if absent. "deps-dir" is the dependency directory, deps in the
-    project if absent. Both are relative to the file that gives them.
+    project if absent. Both are relative to the file that specifies them.
 
 Sources:
     The files of sources are merged, and a file earlier in the list takes precedence over the
-    files after it. vcpkg and an overlay of the same name take the members that the file of the
-    highest precedence gives. The overlays of the last file keep their order, and an overlay that
-    a file of higher precedence adds precedes the overlays of the files after that file. A task,
-    "manifest-dir", "deps-dir", "clone-args" and "fetch-args" at the top level are taken from the
-    file of the highest precedence that gives them.
+    files after it. Each member of vcpkg and of an overlay of a given name is taken from the file
+    of the highest precedence that specifies it. The overlays of the last file keep their order,
+    and an overlay that a file of higher precedence adds precedes the overlays of the files after
+    that file. A task, "manifest-dir", "deps-dir", "clone-args" and "fetch-args" at the top level
+    are taken from the file of the highest precedence that specifies them.
 
     vcpkg and the overlays of the same name in several files are one repository, which is cloned
     at most once.
 
     The member "path" of vcpkg or of an overlay names a local directory, relative to the file that
-    gives it, which is used as it is: neither cloned, fetched nor checked out. A local vcpkg is
-    bootstrapped only if it has no vcpkg executable. The file of the highest precedence that gives
-    a path or a repository decides between them, and an entry that gives both uses the path.
+    specifies it. The script uses the directory directly, without clone, fetch or checkout. A local
+    vcpkg is bootstrapped only if it has no vcpkg executable. If the files specify a path and a
+    repository for the same entry, the member of the file of the highest precedence applies. If one
+    entry specifies both, the path applies.
 
 Repositories:
     The ref of a repository is a full commit hash, a branch or a tag. A branch and a tag are
@@ -84,8 +85,8 @@ Repositories:
 
 Overlays:
     An overlay is checked out into <deps-dir>/<name>, and vcpkg into <deps-dir>/vcpkg. The member
-    "name" defaults to the last component of the repository without .git, or of the path, and two
-    overlays of the same last component need a name of their own.
+    "name" defaults to the last component of the repository without .git, or of the path. Two
+    overlays with the same last component require distinct names.
 
     The overlays precede vcpkg, and an overlay precedes the overlays after it. The directories
     ports and triplets of an overlay are passed to vcpkg if they exist. The members "ports" and
@@ -244,8 +245,9 @@ endif()
 # ----------------------------------
 
 # Sets <out> to the proxy server of the Internet settings of Windows, empty if the proxy is
-# disabled. Taken from qm_get_windows_proxy() of qmsetup. A server given for each protocol, such
-# as http=host:port;https=host:port, yields the server of HTTPS, else that of HTTP.
+# disabled. The implementation follows qm_get_windows_proxy() of qmsetup. If the settings specify a
+# server for each protocol, such as http=host:port;https=host:port, the HTTPS server applies, or the
+# HTTP server if no HTTPS server is given.
 function(_vw_get_windows_proxy _out)
     set(${_out} "" PARENT_SCOPE)
     set(_key "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
@@ -296,8 +298,8 @@ endif()
 # Project
 # ----------------------------------
 
-# The files of sources in their precedence, the local file before the sources by default, both
-# beside this script
+# _source_files lists the files of sources in their precedence. By default, the local file precedes
+# the sources, and both are in the directory of this script.
 if(NOT _source_files)
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/vcpkg-sources.local.json")
         list(APPEND _source_files "${CMAKE_CURRENT_LIST_DIR}/vcpkg-sources.local.json")
@@ -355,7 +357,8 @@ function(_vw_resolve_url _url _out)
         elseif(_rest MATCHES "^\\.\\./(.*)$")
             set(_rest "${CMAKE_MATCH_1}")
             if(NOT _base MATCHES "^(.*[/:])[^/:]+$")
-                message(FATAL_ERROR "The repository ${_url} leaves the remote ${_base}.")
+                message(FATAL_ERROR "The repository ${_url} has more ../ components than the "
+                    "remote ${_base} has path components.")
             endif()
             set(_base "${CMAKE_MATCH_1}")
             if(_base MATCHES "^(.*[^/])/+$")
@@ -425,7 +428,7 @@ endfunction()
 # made absolute against the directory of the source, and a repository is resolved.
 macro(_vw_merge_entry _key)
     # A repository of a file of higher precedence replaces a path of the files merged before it,
-    # unless the same entry also gives a path
+    # unless the same entry also specifies a path
     _vw_json_string(_source_json _value _found ${ARGN} repository)
     if(_found)
         _vw_resolve_url("${_value}" _entry_${_key}_url)
@@ -547,7 +550,7 @@ if(_option_deps_dir)
     set(_deps_dir "${_option_deps_dir}")
 endif()
 
-# The repositories by index: 0 is vcpkg, and 1 and later are the overlays in their order.
+# The repositories are indexed. 0 is vcpkg, and 1 and later are the overlays in their order.
 set(_repo_name_0 vcpkg)
 set(_repo_keys vcpkg ${_overlay_names})
 list(LENGTH _overlay_names _repo_last)
@@ -567,7 +570,7 @@ foreach(_key IN LISTS _repo_keys)
         set(_repo_local_${_number} OFF)
         set(_repo_dir_${_number} "${_deps_dir}/${_key}")
         if(_repo_url_${_number} STREQUAL "" OR _repo_ref_${_number} STREQUAL "")
-            message(FATAL_ERROR "${_key} needs a repository and a ref, or a path.")
+            message(FATAL_ERROR "${_key} requires a repository and a ref, or a path.")
         endif()
     endif()
 
@@ -617,8 +620,9 @@ foreach(_number RANGE 0 ${_repo_last})
     set(_ref "${_repo_ref_${_number}}")
     _vw_is_full_hash("${_ref}" _full)
     if(_ref MATCHES "^[0-9a-f]+$" AND NOT _full)
-        message(FATAL_ERROR "The ref ${_ref} of ${_repo_name_${_number}} looks like an "
-            "abbreviated commit hash. Give the full hash of 40 digits, a branch or a tag.")
+        message(FATAL_ERROR "The ref ${_ref} of ${_repo_name_${_number}} is hexadecimal but not a "
+            "full commit hash, and an abbreviated hash cannot be fetched. Give the full hash of 40 "
+            "digits, a branch or a tag.")
     endif()
 endforeach()
 
@@ -646,7 +650,7 @@ endfunction()
 
 # Checks out the repository of <number> at its specified commit. Sets <changed> to whether the
 # checked-out commit changed. A repository with changes to tracked files is not checked out. A
-# local directory is used as it is.
+# local directory is used directly.
 function(_vw_checkout _number _changed)
     set(_name "${_repo_name_${_number}}")
     set(_dir "${_repo_dir_${_number}}")
@@ -658,14 +662,15 @@ function(_vw_checkout _number _changed)
         if(NOT IS_DIRECTORY "${_dir}")
             message(FATAL_ERROR "The local directory ${_dir} of ${_name} does not exist.")
         endif()
-        _vw_print("${_name} uses the local directory ${_dir}.")
+        _vw_print("${_name} is the local directory ${_dir}.")
         return()
     endif()
 
     _vw_is_full_hash("${_ref}" _full)
 
-    # The clone leaves the checkout to the steps below. git clone takes a branch or a tag but no
-    # commit, so a commit is fetched after the clone of the default branch.
+    # The clone does not check out, and the checkout follows the fetch below. git clone accepts a
+    # branch or a tag but not a commit, therefore a commit is fetched after the clone of the default
+    # branch.
     if(NOT EXISTS "${_dir}/.git")
         set(_branch)
         if(NOT _full)
@@ -682,7 +687,7 @@ function(_vw_checkout _number _changed)
         _vw_git_query(_head -C "${_dir}" rev-parse HEAD)
     endif()
 
-    # A commit hash needs no fetch if it is checked out. A branch or a tag is fetched each time,
+    # A commit hash requires no fetch if it is checked out. A branch or a tag is fetched each time,
     # and the fetched commit is compared.
     if(_full AND _head STREQUAL _ref)
         _vw_print("${_name} is at ${_ref}.")
@@ -751,7 +756,7 @@ function(_vw_resolve_qt_dir _dir _cmake_dir _major)
 
     if(_dry_run)
         message(WARNING "${_dir} holds neither Qt6Config.cmake nor Qt5Config.cmake. The dry run "
-            "takes it as the CMake directory of Qt 6.")
+            "treats it as the CMake directory of Qt 6.")
         set(${_cmake_dir} "${_dir}" PARENT_SCOPE)
         set(${_major} 6 PARENT_SCOPE)
         return()
@@ -840,7 +845,8 @@ function(_vw_status)
 endfunction()
 
 function(_vw_run)
-    # The file of the highest precedence that gives the task, which is merged last
+    # The task is taken from the file of the highest precedence that specifies it, which is merged
+    # last
     set(_found_json)
     set(_number ${_source_count})
     while(_number GREATER 0)
@@ -855,7 +861,7 @@ function(_vw_run)
         math(EXPR _number "${_number} - 1")
     endwhile()
     if(_found_json STREQUAL "")
-        message(FATAL_ERROR "No sources give the task \"${_task}\".")
+        message(FATAL_ERROR "No sources specify the task \"${_task}\".")
     endif()
 
     string(JSON _count LENGTH "${_found_json}" tasks "${_task}")
@@ -882,7 +888,8 @@ endfunction()
 if(_command STREQUAL "fetch")
     _vw_fetch()
 elseif(_command STREQUAL "install")
-    # Qt is resolved before the fetch, so that a wrong directory stops the run at once
+    # Qt is resolved before the fetch, so that an invalid directory stops the run before any
+    # checkout
     if(_qt_dir)
         _vw_resolve_qt_dir("${_qt_dir}" _qt_cmake_dir _qt_major)
     endif()

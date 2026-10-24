@@ -1,6 +1,6 @@
 # vcpkg-workspace.cmake
 
-Prepares the vcpkg workspace of a project without git submodules: vcpkg and any number of overlay repositories are checked out at the refs that the project specifies, and the dependencies of the vcpkg manifest of the project are installed with every overlay. It runs on Windows, macOS and Linux with CMake 3.19 or later and git.
+vcpkg-workspace.cmake prepares the vcpkg workspace of a project without git submodules. It checks out vcpkg and any number of overlay repositories at the refs that the project specifies, and installs the dependencies of the vcpkg manifest of the project with every overlay. It runs on Windows, macOS and Linux with CMake 3.19 or later and git.
 
 ## Setup
 
@@ -13,6 +13,8 @@ Prepares the vcpkg workspace of a project without git submodules: vcpkg and any 
    ```bat
    powershell -Command "Invoke-WebRequest -OutFile scripts/vcpkg-workspace.cmake https://raw.githubusercontent.com/stdware/dev-scripts/main/scripts/vcpkg-workspace.cmake"
    ```
+
+   The first command runs in a POSIX shell, and the second runs in PowerShell and in cmd.
 
 2. Ignore the script and the local sources in `scripts/.gitignore`, and the dependency directory in the `.gitignore` of the project.
 
@@ -73,7 +75,7 @@ Every command accepts `--dry-run`, which prints the git and vcpkg commands witho
 | `clone-args`, `fetch-args` | The arguments of `git clone` and `git fetch`, `["--quiet", "--depth", "1"]` by default, also accepted by vcpkg and by each overlay |
 | `tasks` | Named lists of arguments for `run`, in which `${VCPKG_ROOT}`, `${VCPKG_EXECUTABLE}`, `${VCPKG_INSTALLED_DIR}`, `${VCPKG_MANIFEST_DIR}` and `${VCPKG_OVERLAY_ARGS}` are replaced |
 
-Paths in the sources are relative to the file that gives them.
+Paths in the sources are relative to the file that specifies them.
 
 - A `ref` is a full commit hash, a branch or a tag. A branch and a tag are fetched at each run.
 - A `repository` that begins with `./` or `../` is relative to the remote `origin` of the project, as in `.gitmodules`, so that an overlay is fetched over the protocol by which the project was cloned.
@@ -81,7 +83,7 @@ Paths in the sources are relative to the file that gives them.
 
 ## Local sources
 
-`scripts/vcpkg-sources.local.json`, if it exists, takes precedence over `scripts/vcpkg-sources.json`. It has the same format, and its members replace those of vcpkg and of the overlays of the same name. A `path` uses a local directory as it is, without git:
+`scripts/vcpkg-sources.local.json`, if it exists, takes precedence over `scripts/vcpkg-sources.json`. It has the same format, and its members replace those of vcpkg and of the overlays of the same name. A `path` specifies a local directory, which the script uses directly without clone, fetch or checkout:
 
 ```json
 {
@@ -95,19 +97,19 @@ Paths in the sources are relative to the file that gives them.
 
 ## Qt
 
-The ports that build against Qt find it through the environment variables `QT_DIR` and `Qt6_DIR` or `Qt5_DIR`. `--qt-dir` gives the prefix of Qt 6 or Qt 5:
+The ports that build against Qt find it through the environment variables `QT_DIR` and `Qt6_DIR` or `Qt5_DIR`. `--qt-dir` accepts the prefix of Qt 6 or Qt 5:
 
 ```sh
 cmake -P scripts/vcpkg-workspace.cmake install --qt-dir /path/to/Qt/6.11.2/gcc_64
 ```
 
-or its CMake directory:
+It also accepts the CMake directory of Qt:
 
 ```sh
 cmake -P scripts/vcpkg-workspace.cmake install --qt-dir /path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
 ```
 
-Either of them sets the environment variables for vcpkg:
+Both commands set the following environment variables for vcpkg:
 
 ```
 QT_DIR=/path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
@@ -115,11 +117,11 @@ Qt6_DIR=/path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
 VCPKG_KEEP_ENV_VARS=<VCPKG_KEEP_ENV_VARS of the environment>;QT_DIR;Qt6_DIR
 ```
 
-`VCPKG_KEEP_ENV_VARS` names the variables that vcpkg passes to the build of a port, which on Windows otherwise does not see them. Without `--qt-dir`, the environment variable `QT_DIR`, `Qt6_DIR` or `Qt5_DIR`, in this order, takes its place. Without either, the script passes no Qt.
+`VCPKG_KEEP_ENV_VARS` names the variables that vcpkg keeps in the environment of a port build. On Windows, vcpkg removes the other variables from that environment, apart from a fixed set. Without `--qt-dir`, the environment variable `QT_DIR`, `Qt6_DIR` or `Qt5_DIR`, in this order, takes its place. Without either, the script passes no Qt.
 
 ## Continuous integration
 
-A workflow downloads the script before it runs, for example in GitHub Actions after [install-qt-action](https://github.com/jurplel/install-qt-action), which sets `QT_ROOT_DIR` to the prefix of Qt:
+A workflow downloads the script before it runs the script, for example in GitHub Actions after [install-qt-action](https://github.com/jurplel/install-qt-action), which sets `QT_ROOT_DIR` to the prefix of Qt:
 
 ```yaml
 - name: Install vcpkg dependencies
