@@ -785,9 +785,6 @@ function(_vw_install)
         string(CONCAT _text "Environment: QT_DIR=${_qt_cmake_dir} "
             "Qt${_qt_major}_DIR=${_qt_cmake_dir} VCPKG_KEEP_ENV_VARS=${_keep_text}")
         _vw_print("${_text}")
-    else()
-        message(WARNING "Neither --qt-dir nor the environment variable QT_DIR, Qt6_DIR or Qt5_DIR "
-            "is set. The ports that build against Qt fail to find it.")
     endif()
 
     _vw_execute(${_args})
