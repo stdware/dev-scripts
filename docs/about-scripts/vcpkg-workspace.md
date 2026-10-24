@@ -95,19 +95,38 @@ Paths in the sources are relative to the file that gives them.
 
 ## Qt
 
-The ports that build against Qt receive it through the environment variables `QT_DIR` and `Qt6_DIR` or `Qt5_DIR`, which the script sets from `--qt-dir` and adds to `VCPKG_KEEP_ENV_VARS`. `--qt-dir` accepts the CMake directory of Qt 6 or Qt 5 or the prefix of Qt. Without the option, the environment variable `QT_DIR`, `Qt6_DIR` or `Qt5_DIR` applies.
+The ports that build against Qt find it through the environment variables `QT_DIR` and `Qt6_DIR` or `Qt5_DIR`. `--qt-dir` gives the prefix of Qt 6 or Qt 5:
+
+```sh
+cmake -P scripts/vcpkg-workspace.cmake install --qt-dir /path/to/Qt/6.11.2/gcc_64
+```
+
+or its CMake directory:
+
+```sh
+cmake -P scripts/vcpkg-workspace.cmake install --qt-dir /path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
+```
+
+Either of them sets the environment variables for vcpkg:
+
+```
+QT_DIR=/path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
+Qt6_DIR=/path/to/Qt/6.11.2/gcc_64/lib/cmake/Qt6
+VCPKG_KEEP_ENV_VARS=<VCPKG_KEEP_ENV_VARS of the environment>;QT_DIR;Qt6_DIR
+```
+
+`VCPKG_KEEP_ENV_VARS` names the variables that vcpkg passes to the build of a port, which on Windows otherwise does not see them. Without `--qt-dir`, the environment variable `QT_DIR`, `Qt6_DIR` or `Qt5_DIR`, in this order, takes its place. Without either, the script passes no Qt.
 
 ## Continuous integration
 
-A workflow downloads the script before it runs, for example in GitHub Actions:
+A workflow downloads the script before it runs, for example in GitHub Actions after [install-qt-action](https://github.com/jurplel/install-qt-action), which sets `QT_ROOT_DIR` to the prefix of Qt:
 
 ```yaml
 - name: Install vcpkg dependencies
   env:
     DEV_SCRIPTS_REF: main
-    QT_DIR: ${{ env.QT_ROOT_DIR }}/lib/cmake/Qt6
   shell: pwsh
   run: |
     Invoke-WebRequest -OutFile scripts/vcpkg-workspace.cmake "https://raw.githubusercontent.com/stdware/dev-scripts/$env:DEV_SCRIPTS_REF/scripts/vcpkg-workspace.cmake"
-    cmake -P scripts/vcpkg-workspace.cmake install
+    cmake -P scripts/vcpkg-workspace.cmake install --qt-dir $env:QT_ROOT_DIR
 ```
