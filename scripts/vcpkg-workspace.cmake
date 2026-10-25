@@ -13,7 +13,8 @@ Usage:
 
 Commands:
     fetch           Checks out vcpkg and every overlay at the specified commits, and bootstraps
-                    vcpkg after a checkout of another commit
+                    vcpkg if its vcpkg tool is absent or of a release other than the release
+                    that the checkout requires
     install         Runs fetch, then installs the dependencies with every overlay
     status          Lists the specified and the checked-out commit of every repository
     run <task>      Runs a task of the sources
@@ -58,10 +59,9 @@ Sources:
     at most once.
 
     The member "path" of vcpkg or of an overlay names a local directory, relative to the file that
-    specifies it. The script uses the directory directly, without clone, fetch or checkout. A local
-    vcpkg is bootstrapped only if it has no vcpkg executable. If the files specify a path and a
-    repository for the same entry, the member of the file of the highest precedence applies. If one
-    entry specifies both, the path applies.
+    specifies it. The script uses the directory directly, without clone, fetch or checkout. If the
+    files specify a path and a repository for the same entry, the member of the file of the highest
+    precedence applies. If one entry specifies both, the path applies.
 
 Repositories:
     The ref of a repository is a full commit hash, a branch or a tag. A branch and a tag are
@@ -79,6 +79,10 @@ Repositories:
     A repository that begins with ./ or ../ is relative to the remote origin of the project, as in
     .gitmodules, so that it is fetched by the same protocol. A checkout whose remote differs, such
     as after a change between HTTPS and SSH, has its remote set to the resolved URL.
+
+    vcpkg, as a repository or as a local directory, is bootstrapped if it has no vcpkg executable,
+    or if the release of the executable differs from VCPKG_TOOL_RELEASE_TAG of
+    scripts/vcpkg-tool-metadata.txt in vcpkg.
 
     On Windows, the proxy of the Internet settings applies to git and vcpkg unless the environment
     variable HTTP_PROXY or HTTPS_PROXY is set.
@@ -716,6 +720,39 @@ function(_vw_checkout _number _changed)
     set(${_changed} ON PARENT_SCOPE)
 endfunction()
 
+# Sets <out> to whether the vcpkg executable exists and its version is VCPKG_TOOL_RELEASE_TAG of
+# scripts/vcpkg-tool-metadata.txt, the release of the vcpkg tool that the checkout of vcpkg requires
+function(_vw_vcpkg_tool_matches _out)
+    set(${_out} OFF PARENT_SCOPE)
+    set(_metadata "${_vcpkg_dir}/scripts/vcpkg-tool-metadata.txt")
+    if(NOT EXISTS "${_vcpkg_executable}" OR NOT EXISTS "${_metadata}")
+        return()
+    endif()
+
+    file(STRINGS "${_metadata}" _tag REGEX "^VCPKG_TOOL_RELEASE_TAG=")
+    string(REGEX REPLACE "^VCPKG_TOOL_RELEASE_TAG=" "" _tag "${_tag}")
+    string(STRIP "${_tag}" _tag)
+
+    # The output has the form "... version <release>-<commit of vcpkg-tool>", such as
+    # "... version 2026-09-26-51bf87ca..."
+    execute_process(COMMAND "${_vcpkg_executable}" version --disable-metrics
+        WORKING_DIRECTORY "${_vcpkg_dir}"
+        OUTPUT_VARIABLE _output
+        ERROR_QUIET
+        RESULT_VARIABLE _result
+    )
+    if(NOT _result EQUAL 0 OR NOT _output MATCHES "version ([0-9]+-[0-9]+-[0-9]+)")
+        return()
+    endif()
+    set(_version "${CMAKE_MATCH_1}")
+
+    if(_version STREQUAL _tag)
+        set(${_out} ON PARENT_SCOPE)
+    else()
+        _vw_print("The vcpkg tool ${_version} differs from the release ${_tag} of the checkout.")
+    endif()
+endfunction()
+
 function(_vw_fetch)
     if(NOT _dry_run)
         file(MAKE_DIRECTORY "${_deps_dir}")
@@ -729,8 +766,10 @@ function(_vw_fetch)
         _vw_checkout(${_number} _)
     endforeach()
 
-    # The bootstrap downloads the vcpkg tool of the checked-out commit
-    if(_vcpkg_changed OR NOT EXISTS "${_vcpkg_executable}")
+    # The bootstrap downloads the vcpkg tool of the checked-out commit. A dry run precedes the
+    # checkout, therefore a dry run also prints the bootstrap if the commit of vcpkg changes.
+    _vw_vcpkg_tool_matches(_matches)
+    if(NOT _matches OR (_dry_run AND _vcpkg_changed))
         if(CMAKE_HOST_WIN32)
             file(TO_NATIVE_PATH "${_vcpkg_dir}/bootstrap-vcpkg.bat" _bootstrap)
             _vw_execute(cmd /c "${_bootstrap}" -disableMetrics)

@@ -56,7 +56,7 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=deps/vcpkg/scripts/buildsystems/vcpkg
 
 | Command | Effect |
 |---|---|
-| `fetch` | Checks out vcpkg and every overlay, and bootstraps vcpkg after a checkout of another commit |
+| `fetch` | Checks out vcpkg and every overlay, and bootstraps vcpkg if its vcpkg tool is absent or of a release other than the release that the checkout requires |
 | `install` | Runs `fetch`, then installs the dependencies with every overlay |
 | `status` | Lists the specified and the checked-out commit of every repository |
 | `run <task>` | Runs a task of the sources |
@@ -80,6 +80,7 @@ Paths in the sources are relative to the file that specifies them.
 - A `ref` is a full commit hash, a branch or a tag. A branch and a tag are fetched at each run.
 - A `repository` that begins with `./` or `../` is relative to the remote `origin` of the project, as in `.gitmodules`, so that an overlay is fetched over the protocol by which the project was cloned.
 - The dependencies are installed into `<vcpkg>/installed`.
+- vcpkg is bootstrapped if it has no vcpkg executable, or if the release of the executable differs from `VCPKG_TOOL_RELEASE_TAG` of `scripts/vcpkg-tool-metadata.txt` in vcpkg. The rule also applies to a local vcpkg, for example a submodule.
 
 ## Local sources
 
