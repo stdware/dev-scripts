@@ -17,6 +17,8 @@ Commands:
                     that the checkout requires
     install         Runs fetch, then installs the dependencies with every overlay
     status          Lists the specified and the checked-out commit of every repository
+    paths           Prints the paths of the workspace as lines of <name>=<path>, and nothing
+                    else, for other programs to read
     run <task>      Runs a task of the sources
     help            Prints this text
 
@@ -231,7 +233,7 @@ if(NOT _command OR _command STREQUAL "help")
     return()
 endif()
 
-if(NOT _command MATCHES "^(fetch|install|status|run)$")
+if(NOT _command MATCHES "^(fetch|install|status|paths|run)$")
     message(FATAL_ERROR "Unknown command ${_command}. See help.")
 endif()
 
@@ -294,7 +296,9 @@ if(CMAKE_HOST_WIN32 AND NOT DEFINED ENV{HTTP_PROXY} AND NOT DEFINED ENV{HTTPS_PR
         set(ENV{HTTP_PROXY} "http://${_proxy}")
         set(ENV{HTTPS_PROXY} "http://${_proxy}")
         set(ENV{ALL_PROXY} "http://${_proxy}")
-        _vw_print("Proxy: http://${_proxy}")
+        if(NOT _command STREQUAL "paths")
+            _vw_print("Proxy: http://${_proxy}")
+        endif()
     endif()
 endif()
 
@@ -318,7 +322,7 @@ foreach(_source_file IN LISTS _source_files)
 endforeach()
 
 list(LENGTH _source_files _length)
-if(_length GREATER 1)
+if(_length GREATER 1 AND NOT _command STREQUAL "paths")
     foreach(_source_file IN LISTS _source_files)
         _vw_print("Sources: ${_source_file}")
     endforeach()
@@ -883,6 +887,15 @@ function(_vw_status)
     endforeach()
 endfunction()
 
+# Prints the paths that the tasks receive as variables, and the toolchain file of vcpkg
+function(_vw_paths)
+    _vw_print("VCPKG_ROOT=${_vcpkg_dir}")
+    _vw_print("VCPKG_EXECUTABLE=${_vcpkg_executable}")
+    _vw_print("VCPKG_INSTALLED_DIR=${_installed_dir}")
+    _vw_print("VCPKG_MANIFEST_DIR=${_manifest_dir}")
+    _vw_print("VCPKG_TOOLCHAIN_FILE=${_vcpkg_dir}/scripts/buildsystems/vcpkg.cmake")
+endfunction()
+
 function(_vw_run)
     # The task is taken from the file of the highest precedence that specifies it, which is merged
     # last
@@ -936,6 +949,8 @@ elseif(_command STREQUAL "install")
     _vw_install()
 elseif(_command STREQUAL "status")
     _vw_status()
+elseif(_command STREQUAL "paths")
+    _vw_paths()
 elseif(_command STREQUAL "run")
     _vw_run()
 endif()

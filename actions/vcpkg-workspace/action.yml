@@ -1,0 +1,132 @@
+# SPDX-FileCopyrightText: 2026 Stdware Collections
+# SPDX-License-Identifier: MIT
+
+name: vcpkg workspace
+description: Prepares the vcpkg workspace of a project with vcpkg-workspace.cmake and caches the binary packages
+
+inputs:
+  sources-file:
+    description: The files of sources, one per line, an earlier file taking precedence
+    required: false
+    default: scripts/vcpkg-sources.json
+  qt-dir:
+    description: The prefix or the CMake directory of Qt 6 or Qt 5 for the ports that build against Qt
+    required: false
+    default: ''
+  triplet:
+    description: The triplet to install, the default triplet of vcpkg if empty
+    required: false
+    default: ''
+  install-args:
+    description: The arguments appended to the command of vcpkg install, one per line
+    required: false
+    default: ''
+  cache:
+    description: Whether the binary packages of vcpkg are restored from and saved to the cache of GitHub Actions
+    required: false
+    default: 'true'
+  cache-key:
+    description: A key that separates the caches of jobs on the same operating system and architecture
+    required: false
+    default: ''
+
+outputs:
+  vcpkg-root:
+    description: The directory of vcpkg
+    value: ${{ steps.paths.outputs.VCPKG_ROOT }}
+  vcpkg-executable:
+    description: The vcpkg executable
+    value: ${{ steps.paths.outputs.VCPKG_EXECUTABLE }}
+  installed-dir:
+    description: The directory into which the dependencies are installed
+    value: ${{ steps.paths.outputs.VCPKG_INSTALLED_DIR }}
+  toolchain-file:
+    description: The CMake toolchain file of vcpkg
+    value: ${{ steps.paths.outputs.VCPKG_TOOLCHAIN_FILE }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare the binary cache
+      id: prepare
+      shell: pwsh
+      env:
+        USE_CACHE: ${{ inputs.cache }}
+        CACHE_KEY: ${{ inputs.cache-key }}
+      run: |
+        if ($env:USE_CACHE -eq 'true') {
+          $directory = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          "VCPKG_DEFAULT_BINARY_CACHE=$directory" >> $env:GITHUB_ENV
+          $prefix = "vcpkg-$($env:RUNNER_OS)-$($env:RUNNER_ARCH)-"
+          if ($env:CACHE_KEY) {
+            $prefix += "$($env:CACHE_KEY)-"
+          }
+          "directory=$directory" >> $env:GITHUB_OUTPUT
+          "prefix=$prefix" >> $env:GITHUB_OUTPUT
+        } else {
+          'VCPKG_BINARY_SOURCES=clear' >> $env:GITHUB_ENV
+        }
+
+    # vcpkg identifies a binary package by its ABI, therefore the cache of an earlier commit remains
+    # valid. Each commit has a distinct key, so that the packages that the commit adds are saved.
+    - name: Restore the binary cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.prepare.outputs.directory }}
+        key: ${{ steps.prepare.outputs.prefix }}${{ github.sha }}
+        restore-keys: ${{ steps.prepare.outputs.prefix }}
+
+    # The script of the same commit as the action runs, therefore the ref of the action also fixes
+    # the version of the script
+    - name: Install the dependencies
+      id: paths
+      shell: pwsh
+      env:
+        SOURCES_FILE: ${{ inputs.sources-file }}
+        QT_DIR_INPUT: ${{ inputs.qt-dir }}
+        TRIPLET: ${{ inputs.triplet }}
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      run: |
+        $script = Join-Path $env:GITHUB_ACTION_PATH '../../scripts/vcpkg-workspace.cmake'
+        $sources = @()
+        foreach ($file in ($env:SOURCES_FILE -split "`r?`n")) {
+          if ($file.Trim()) {
+            $sources += @('--sources-file', $file.Trim())
+          }
+        }
+
+        $arguments = @('-P', $script, 'install') + $sources
+        if ($env:QT_DIR_INPUT) {
+          $arguments += @('--qt-dir', $env:QT_DIR_INPUT)
+        }
+        if ($env:TRIPLET) {
+          $arguments += @('--triplet', $env:TRIPLET)
+        }
+        $installArgs = @()
+        foreach ($argument in ($env:INSTALL_ARGS -split "`r?`n")) {
+          if ($argument.Trim()) {
+            $installArgs += $argument.Trim()
+          }
+        }
+        if ($installArgs.Count -gt 0) {
+          $arguments += @('--') + $installArgs
+        }
+        cmake @arguments
+        if ($LASTEXITCODE -ne 0) {
+          throw 'The installation of the vcpkg dependencies failed.'
+        }
+
+        $paths = cmake -P $script paths @sources
+        if ($LASTEXITCODE -ne 0) {
+          throw 'The paths of the vcpkg workspace are unavailable.'
+        }
+        $paths >> $env:GITHUB_OUTPUT
+
+    - name: Save the binary cache
+      if: inputs.cache == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.prepare.outputs.directory }}
+        key: ${{ steps.prepare.outputs.prefix }}${{ github.sha }}

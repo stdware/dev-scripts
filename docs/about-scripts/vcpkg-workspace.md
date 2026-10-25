@@ -59,6 +59,7 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=deps/vcpkg/scripts/buildsystems/vcpkg
 | `fetch` | Checks out vcpkg and every overlay, and bootstraps vcpkg if its vcpkg tool is absent or of a release other than the release that the checkout requires |
 | `install` | Runs `fetch`, then installs the dependencies with every overlay |
 | `status` | Lists the specified and the checked-out commit of every repository |
+| `paths` | Prints `VCPKG_ROOT`, `VCPKG_EXECUTABLE`, `VCPKG_INSTALLED_DIR`, `VCPKG_MANIFEST_DIR` and `VCPKG_TOOLCHAIN_FILE` as lines of `<name>=<path>`, and nothing else |
 | `run <task>` | Runs a task of the sources |
 | `help` | Prints the full reference |
 
@@ -120,9 +121,42 @@ VCPKG_KEEP_ENV_VARS=<VCPKG_KEEP_ENV_VARS of the environment>;QT_DIR;Qt6_DIR
 
 `VCPKG_KEEP_ENV_VARS` names the variables that vcpkg keeps in the environment of a port build. On Windows, vcpkg removes the other variables from that environment, apart from a fixed set. Without `--qt-dir`, the environment variable `QT_DIR`, `Qt6_DIR` or `Qt5_DIR`, in this order, takes its place. Without either, the script passes no Qt.
 
-## Continuous integration
+## GitHub Actions
 
-A workflow downloads the script before it runs the script, for example in GitHub Actions after [install-qt-action](https://github.com/jurplel/install-qt-action), which sets `QT_ROOT_DIR` to the prefix of Qt:
+The action `actions/vcpkg-workspace` runs `install` with the script of the same commit as the action, therefore the ref of the action also fixes the version of the script. The action restores the binary packages of vcpkg from the cache of GitHub Actions before the installation and saves them after it. The following example runs the action after [install-qt-action](https://github.com/jurplel/install-qt-action), which sets `QT_ROOT_DIR` to the prefix of Qt:
+
+```yaml
+- name: Install vcpkg dependencies
+  id: vcpkg
+  uses: stdware/dev-scripts/actions/vcpkg-workspace@main
+  with:
+    qt-dir: ${{ env.QT_ROOT_DIR }}
+
+- name: Configure
+  run: cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=${{ steps.vcpkg.outputs.toolchain-file }}
+```
+
+| Input | Meaning |
+|---|---|
+| `sources-file` | The files of sources, one per line, an earlier file taking precedence. The default is `scripts/vcpkg-sources.json`. |
+| `qt-dir` | The value of `--qt-dir`. No Qt is passed if it is empty. |
+| `triplet` | The value of `--triplet`. vcpkg uses its default triplet if it is empty. |
+| `install-args` | The arguments after `--`, one per line |
+| `cache` | Whether the binary packages are restored and saved, `true` by default. If it is `false`, `VCPKG_BINARY_SOURCES` is set to `clear` for the job. |
+| `cache-key` | A key that separates the caches of jobs on the same operating system and architecture, for example of different triplets |
+
+| Output | Meaning |
+|---|---|
+| `vcpkg-root` | The directory of vcpkg |
+| `vcpkg-executable` | The vcpkg executable |
+| `installed-dir` | The directory into which the dependencies are installed |
+| `toolchain-file` | The CMake toolchain file of vcpkg |
+
+The binary packages are cached under a key of the operating system, the architecture, `cache-key` and the commit. A run restores the cache of the latest key with the same prefix, because vcpkg identifies a binary package by its ABI and the packages of an earlier commit remain valid.
+
+## Continuous integration without the action
+
+A workflow can also download the script before it runs the script, for example in GitHub Actions after install-qt-action:
 
 ```yaml
 - name: Install vcpkg dependencies
