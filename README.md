@@ -28,6 +28,8 @@ powershell -Command "Invoke-WebRequest -OutFile scripts/<script> https://raw.git
 
 Replace `main` with a commit hash to download a fixed version.
 
+A script records its metadata in sections, each between a line `@begin <name>` and a line `@end <name>` inside a comment, for example `help` and `version`. Programs read a section by these lines, independently of the language of the script.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

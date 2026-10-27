@@ -1,7 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Stdware Collections
 # SPDX-License-Identifier: MIT
 
+# A section of this file lies between a line @begin <name> and a line @end <name>. The script and
+# other programs read the sections help and version by these lines, independently of the syntax of
+# the comments that hold them.
+
 #[[
+@begin version
+1.0.0
+@end version
+]]
+
+#[[
+@begin help
 vcpkg-workspace.cmake from https://github.com/stdware/dev-scripts
 
 The script prepares the vcpkg workspace of a project. It checks out vcpkg and the overlays that
@@ -20,6 +31,11 @@ Commands:
     paths           Prints the paths of the workspace as lines of <name>=<path>, and nothing
                     else, for other programs to read
     run <task>      Runs a task of the sources
+    self-update [<ref>]
+                    Replaces this script with the script at <ref> of
+                    https://github.com/stdware/dev-scripts, a branch, a tag or a commit, main if
+                    absent
+    version         Prints the version of this script
     help            Prints this text
 
 Options:
@@ -103,9 +119,41 @@ Tasks:
     ${VCPKG_EXECUTABLE}, ${VCPKG_INSTALLED_DIR} and ${VCPKG_MANIFEST_DIR} in an argument are
     replaced with their values. An argument that is exactly ${VCPKG_OVERLAY_ARGS} is replaced
     with the overlay arguments of vcpkg.
+@end help
 ]]
 
 cmake_minimum_required(VERSION 3.19)
+
+# ----------------------------------
+# Sections
+# ----------------------------------
+
+# Sets <out> to the section <name> of <file>, and <found> to whether the section exists
+function(_vw_read_section _file _name _out _found)
+    set(${_out} "" PARENT_SCOPE)
+    set(${_found} OFF PARENT_SCOPE)
+    file(READ "${_file}" _content)
+    string(REPLACE "\r" "" _content "${_content}")
+
+    set(_begin "\n@begin ${_name}\n")
+    string(FIND "${_content}" "${_begin}" _start)
+    if(_start EQUAL -1)
+        return()
+    endif()
+    string(LENGTH "${_begin}" _length)
+    math(EXPR _start "${_start} + ${_length}")
+    string(SUBSTRING "${_content}" ${_start} -1 _content)
+
+    string(FIND "${_content}" "\n@end ${_name}\n" _end)
+    if(_end EQUAL -1)
+        return()
+    endif()
+    string(SUBSTRING "${_content}" 0 ${_end} _content)
+    set(${_out} "${_content}" PARENT_SCOPE)
+    set(${_found} ON PARENT_SCOPE)
+endfunction()
+
+_vw_read_section("${CMAKE_CURRENT_LIST_FILE}" version _version _)
 
 # ----------------------------------
 # Output and execution
@@ -156,6 +204,7 @@ endfunction()
 # ----------------------------------
 set(_command)
 set(_task)
+set(_update_ref)
 set(_dry_run OFF)
 set(_triplet)
 set(_qt_dir)
@@ -221,29 +270,30 @@ while(_index LESS CMAKE_ARGC)
         set(_command "${_arg}")
     elseif(_command STREQUAL "run" AND NOT _task)
         set(_task "${_arg}")
+    elseif(_command STREQUAL "self-update" AND NOT _update_ref)
+        set(_update_ref "${_arg}")
     else()
         message(FATAL_ERROR "Unexpected argument ${_arg}. See help.")
     endif()
 endwhile()
 
 if(NOT _command OR _command STREQUAL "help")
-    file(READ "${CMAKE_CURRENT_LIST_FILE}" _self)
-    string(REGEX MATCH "#\\[\\[\n(.*)\n\\]\\]" _ "${_self}")
-    _vw_print("${CMAKE_MATCH_1}")
+    _vw_read_section("${CMAKE_CURRENT_LIST_FILE}" help _help _)
+    _vw_print("${_help}")
     return()
 endif()
 
-if(NOT _command MATCHES "^(fetch|install|status|paths|run)$")
+if(_command STREQUAL "version")
+    _vw_print("${_version}")
+    return()
+endif()
+
+if(NOT _command MATCHES "^(fetch|install|status|paths|run|self-update)$")
     message(FATAL_ERROR "Unknown command ${_command}. See help.")
 endif()
 
 if(_command STREQUAL "run" AND NOT _task)
     message(FATAL_ERROR "run requires the name of a task.")
-endif()
-
-find_program(_git NAMES git)
-if(NOT _git)
-    message(FATAL_ERROR "git is required and was not found.")
 endif()
 
 # ----------------------------------
@@ -300,6 +350,59 @@ if(CMAKE_HOST_WIN32 AND NOT DEFINED ENV{HTTP_PROXY} AND NOT DEFINED ENV{HTTPS_PR
             _vw_print("Proxy: http://${_proxy}")
         endif()
     endif()
+endif()
+
+# ----------------------------------
+# Self-update
+# ----------------------------------
+
+# The download replaces this file only after it proves to be a script with a version. CMake reads a
+# script completely before it runs the script, therefore the replacement takes effect at the next
+# run.
+if(_command STREQUAL "self-update")
+    if(NOT _update_ref)
+        set(_update_ref main)
+    endif()
+    string(CONCAT _url "https://raw.githubusercontent.com/stdware/dev-scripts/${_update_ref}"
+        "/scripts/vcpkg-workspace.cmake")
+    _vw_print("> download ${_url} to ${CMAKE_CURRENT_LIST_FILE}")
+    if(_dry_run)
+        return()
+    endif()
+
+    set(_download "${CMAKE_CURRENT_LIST_FILE}.download")
+    file(DOWNLOAD "${_url}" "${_download}" STATUS _status TLS_VERIFY ON)
+    list(GET _status 0 _code)
+    if(NOT _code EQUAL 0)
+        list(GET _status 1 _message)
+        file(REMOVE "${_download}")
+        message(FATAL_ERROR "The download of ${_url} failed: ${_message}")
+    endif()
+
+    _vw_read_section("${_download}" version _new_version _found)
+    if(NOT _found)
+        file(REMOVE "${_download}")
+        message(FATAL_ERROR "${_url} has no section version and is not taken as this script.")
+    endif()
+
+    file(SHA256 "${CMAKE_CURRENT_LIST_FILE}" _current_hash)
+    file(SHA256 "${_download}" _new_hash)
+    if(_new_hash STREQUAL _current_hash)
+        file(REMOVE "${_download}")
+        _vw_print("vcpkg-workspace.cmake ${_version} is identical to ${_update_ref}.")
+        return()
+    endif()
+
+    file(RENAME "${_download}" "${CMAKE_CURRENT_LIST_FILE}")
+    string(CONCAT _text "vcpkg-workspace.cmake is replaced, from ${_version} to ${_new_version} at "
+        "${_update_ref}.")
+    _vw_print("${_text}")
+    return()
+endif()
+
+find_program(_git NAMES git)
+if(NOT _git)
+    message(FATAL_ERROR "git is required and was not found.")
 endif()
 
 # ----------------------------------

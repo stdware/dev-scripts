@@ -14,7 +14,13 @@ vcpkg-workspace.cmake prepares the vcpkg workspace of a project without git subm
    powershell -Command "Invoke-WebRequest -OutFile scripts/vcpkg-workspace.cmake https://raw.githubusercontent.com/stdware/dev-scripts/main/scripts/vcpkg-workspace.cmake"
    ```
 
-   The first command runs in a POSIX shell, and the second runs in PowerShell and in cmd.
+   The first command runs in a POSIX shell, and the second runs in PowerShell and in cmd. A later version replaces the downloaded script with the following command:
+
+   ```sh
+   cmake -P scripts/vcpkg-workspace.cmake self-update
+   ```
+
+   The script accepts the download only if the download has a version section. A script of a version before 1.0.0 has no command self-update and is downloaded again.
 
 2. Ignore the script and the local sources in `scripts/.gitignore`, and the dependency directory in the `.gitignore` of the project.
 
@@ -61,6 +67,8 @@ cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=deps/vcpkg/scripts/buildsystems/vcpkg
 | `status` | Lists the specified and the checked-out commit of every repository |
 | `paths` | Prints `VCPKG_ROOT`, `VCPKG_EXECUTABLE`, `VCPKG_INSTALLED_DIR`, `VCPKG_MANIFEST_DIR` and `VCPKG_TOOLCHAIN_FILE` as lines of `<name>=<path>`, and nothing else |
 | `run <task>` | Runs a task of the sources |
+| `self-update [<ref>]` | Replaces the script with the script at `<ref>` of this repository, a branch, a tag or a commit, `main` by default |
+| `version` | Prints the version of the script |
 | `help` | Prints the full reference |
 
 Every command accepts `--dry-run`, which prints the git and vcpkg commands without running them. The arguments after `--` are appended to the command of `vcpkg install` or of the task. `cmake -P scripts/vcpkg-workspace.cmake help` prints every option and rule.
