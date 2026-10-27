@@ -359,6 +359,10 @@ endif()
 # The download replaces this file only after it proves to be a script with a version. CMake reads a
 # script completely before it runs the script, therefore the replacement takes effect at the next
 # run.
+#
+# TODO: Resolve a branch or a tag to its commit with git ls-remote and download the script of the
+# commit. The CDN of raw.githubusercontent.com caches the file of a branch for up to 300 seconds, so
+# that a download shortly after a push can return the previous script.
 if(_command STREQUAL "self-update")
     if(NOT _update_ref)
         set(_update_ref main)
